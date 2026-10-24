@@ -189,6 +189,48 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
         Message::Reload => {
             *state = build_state();
         }
+        Message::ResetAll => {
+            // Native yes/no dialog.
+            let yes = if std::process::Command::new("kdialog")
+                .args(["--yesno", "Reset all default applications to system defaults?", "--title", "Reset all"])
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false)
+            {
+                true
+            } else if std::process::Command::new("zenity")
+                .args(["--question", "--title=Reset all", "--text=Reset all default applications to system defaults?"])
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false)
+            {
+                true
+            } else {
+                // Determine if a tool existed but user said no, vs no tool.
+                // Try detecting tool presence.
+                if std::process::Command::new("kdialog").arg("--help").output().is_err()
+                    && std::process::Command::new("zenity").arg("--help").output().is_err()
+                {
+                    state.status = "No native dialog tool found (kdialog/zenity).".to_string();
+                    return Task::none();
+                }
+                false
+            };
+
+            if yes {
+                match mime::reset_local_mimeapps() {
+                    Ok(()) => {
+                        *state = build_state();
+                        state.status = "Reset to system defaults.".to_string();
+                    }
+                    Err(e) => {
+                        state.status = format!("Reset failed: {}", e);
+                    }
+                }
+            } else {
+                state.status = "Reset cancelled.".to_string();
+            }
+        }
     }
     Task::none()
 }
@@ -200,6 +242,7 @@ enum Message {
     SetSearch(String),
     Save,
     Reload,
+    ResetAll,
 }
 
 fn view<'a>(state: &'a State) -> Element<'a, Message> {
@@ -210,10 +253,11 @@ fn view<'a>(state: &'a State) -> Element<'a, Message> {
         save_btn = save_btn.on_press(Message::Save);
     }
     let reload_btn = button("Reload").on_press(Message::Reload);
+    let reset_btn = button("Reset all").on_press(Message::ResetAll);
 
     let status = text(&state.status);
 
-    let header = row![title, Space::with_width(Length::Fill), save_btn, reload_btn, status]
+    let header = row![title, Space::with_width(Length::Fill), save_btn, reload_btn, reset_btn, status]
         .spacing(8)
         .align_y(iced::Alignment::Center);
 

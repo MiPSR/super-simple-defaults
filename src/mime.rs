@@ -346,6 +346,29 @@ pub fn write_mimeapps(defaults: &BTreeMap<String, String>) -> Result<(), String>
     Ok(())
 }
 
+pub fn reset_local_mimeapps() -> Result<(), String> {
+    // Config location
+    let cfg = mimeapps_path();
+    match fs::remove_file(&cfg) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(format!("{}: {}", cfg.display(), e)),
+    }
+
+    // Data location
+    let data_home = std::env::var("XDG_DATA_HOME").unwrap_or_else(|_| {
+        let home = std::env::var("HOME").unwrap_or_else(|_| ".".to_string());
+        format!("{}/.local/share", home)
+    });
+    let data_path = PathBuf::from(data_home).join("applications/mimeapps.list");
+    match fs::remove_file(&data_path) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => return Err(format!("{}: {}", data_path.display(), e)),
+    }
+    Ok(())
+}
+
 pub fn resolve_icon(raw: Option<&str>) -> Option<PathBuf> {
     let raw = raw?.trim();
     if raw.is_empty() {
