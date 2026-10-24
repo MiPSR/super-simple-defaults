@@ -38,6 +38,7 @@ pub struct AppEntry {
     pub id: String,
     pub name: String,
     pub mime_types: Vec<String>,
+    pub icon: Option<std::path::PathBuf>,
 }
 
 #[derive(Clone, Debug)]
@@ -55,6 +56,12 @@ pub struct CategoryState {
     pub overrides: HashMap<String, SubChoice>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub enum OpenSelector {
+    Main(usize),
+    Sub(String),
+}
+
 #[derive(Clone, Debug)]
 pub struct State {
     pub apps: Vec<AppEntry>,
@@ -62,6 +69,7 @@ pub struct State {
     pub status: String,
     pub dirty: bool,
     pub dark: bool,
+    pub open: Option<OpenSelector>,
 }
 
 impl State {

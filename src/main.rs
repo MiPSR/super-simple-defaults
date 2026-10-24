@@ -2,7 +2,7 @@ mod mime;
 mod model;
 
 use crate::model::*;
-use iced::widget::{button, column, container, pick_list, row, scrollable, text, Space};
+use iced::widget::{button, column, container, image, row, scrollable, svg, text, Space};
 use iced::{Element, Length, Task};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -157,6 +157,7 @@ fn build_state() -> State {
         status: String::new(),
         dirty: false,
         dark: detect_dark(),
+        open: None,
     }
 }
 
@@ -173,6 +174,7 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                 cat.main = choice;
                 state.dirty = true;
             }
+            state.open = None;
         }
         Message::SetSub(mime, choice) => {
             for cat in &mut state.categories {
@@ -180,6 +182,14 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
                     cat.overrides.insert(mime.clone(), choice.clone());
                     state.dirty = true;
                 }
+            }
+            state.open = None;
+        }
+        Message::Toggle(sel) => {
+            if state.open.as_ref() == Some(&sel) {
+                state.open = None;
+            } else {
+                state.open = Some(sel);
             }
         }
         Message::Save => {
@@ -234,6 +244,7 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
 enum Message {
     SetMain(usize, Choice),
     SetSub(String, SubChoice),
+    Toggle(OpenSelector),
     Save,
     Reload,
 }
@@ -264,23 +275,79 @@ fn view<'a>(state: &'a State) -> Element<'a, Message> {
     column![header, body].spacing(12).padding(12).into()
 }
 
+fn app_icon(state: &State, id: &str) -> Option<std::path::PathBuf> {
+    state.apps.iter().find(|a| a.id == id).and_then(|a| a.icon.clone())
+}
+
+fn icon_widget(icon: &Option<std::path::PathBuf>) -> Element<'static, Message> {
+    const SIZE: f32 = 18.0;
+    match icon {
+        Some(p) if p.extension().map(|e| e == "svg").unwrap_or(false) => {
+            svg(iced::widget::svg::Handle::from_path(p))
+                .width(SIZE)
+                .height(SIZE)
+                .into()
+        }
+        Some(p) => image(iced::widget::image::Handle::from_path(p))
+            .width(SIZE)
+            .height(SIZE)
+            .into(),
+        None => Space::with_width(SIZE).into(),
+    }
+}
+
+fn icon_for_choice(state: &State, c: &Choice) -> Option<std::path::PathBuf> {
+    match c {
+        Choice::App(id, _) => app_icon(state, id),
+        Choice::None => None,
+    }
+}
+
+fn icon_for_sub(state: &State, c: &SubChoice) -> Option<std::path::PathBuf> {
+    match c {
+        SubChoice::App(id, _) => app_icon(state, id),
+        _ => None,
+    }
+}
+
 fn category_view<'a>(state: &'a State, idx: usize, cat: &'a CategoryState) -> Element<'a, Message> {
     let header = text(&cat.label).size(18);
 
-    // main dropdown
-    let main_options: Vec<Choice> = {
-        let mut v = vec![Choice::None];
-        let apps = state.apps_for_category(cat);
-        for a in apps {
-            v.push(Choice::App(a.id.clone(), a.name.clone()));
+    // main selector options
+    let mut main_options: Vec<Choice> = vec![Choice::None];
+    let apps = state.apps_for_category(cat);
+    for a in &apps {
+        main_options.push(Choice::App(a.id.clone(), a.name.clone()));
+    }
+    // ensure current main is present
+    if let Choice::App(id, name) = &cat.main {
+        if !main_options.iter().any(|c| matches!(c, Choice::App(x, _) if x == id)) {
+            main_options.push(Choice::App(id.clone(), name.clone()));
         }
-        v
-    };
-    let main_pick = pick_list(main_options, Some(cat.main.clone()), move |c| {
-        Message::SetMain(idx, c)
-    });
+    }
 
-    let main_row = row![text("Main default:"), main_pick].spacing(8);
+    let main_open = state.open == Some(OpenSelector::Main(idx));
+    let main_label = cat.main.to_string();
+    let main_icon = icon_for_choice(state, &cat.main);
+
+    let main_toggle = button(row![icon_widget(&main_icon), text(main_label)].spacing(6))
+        .on_press(Message::Toggle(OpenSelector::Main(idx)));
+    let mut main_col = column![row![text("Main default:"), Space::with_width(Length::Fill), main_toggle].spacing(8)].spacing(4);
+    if main_open {
+        let mut list = column![].spacing(2);
+        for opt in &main_options {
+            let opt_icon = icon_for_choice(state, opt);
+            let label = opt.to_string();
+            let is_sel = *opt == cat.main;
+            let mut btn = button(row![icon_widget(&opt_icon), text(label)].spacing(6));
+            btn = btn.on_press(Message::SetMain(idx, opt.clone()));
+            if is_sel {
+                btn = btn.style(iced::widget::button::primary);
+            }
+            list = list.push(btn);
+        }
+        main_col = main_col.push(scrollable(list).height(Length::Fixed(220.0)));
+    }
 
     // subelements
     let capable_apps_cache = state.apps_for_category(cat);
@@ -293,7 +360,6 @@ fn category_view<'a>(state: &'a State, idx: usize, cat: &'a CategoryState) -> El
         // options for this mime
         let mut opts: Vec<SubChoice> = vec![SubChoice::Inherit, SubChoice::None];
         let mime_apps = state.apps_for_mime(m);
-        // if no specific apps, fall back to category apps
         let list = if mime_apps.is_empty() {
             capable_apps_cache.clone()
         } else {
@@ -303,16 +369,44 @@ fn category_view<'a>(state: &'a State, idx: usize, cat: &'a CategoryState) -> El
             opts.push(SubChoice::App(a.id.clone(), a.name.clone()));
         }
         let current = cat.overrides.get(m).cloned().unwrap_or(SubChoice::Inherit);
+        // ensure current is present
+        if let SubChoice::App(id, namev) = &current {
+            if !opts.iter().any(|c| matches!(c, SubChoice::App(x, _) if x == id)) {
+                opts.push(SubChoice::App(id.clone(), namev.clone()));
+            }
+        }
+
+        let sub_open = state.open == Some(OpenSelector::Sub(m.clone()));
+        let cur_label = current.to_string();
+        let cur_icon = icon_for_sub(state, &current);
         let mime_clone = m.clone();
-        let pick = pick_list(opts, Some(current), move |c| {
-            Message::SetSub(mime_clone.clone(), c)
-        });
-        sub_col = sub_col.push(row![label, Space::with_width(Length::Fill), pick].spacing(8));
+        let toggle = button(row![icon_widget(&cur_icon), text(cur_label)].spacing(6))
+            .on_press(Message::Toggle(OpenSelector::Sub(m.clone())));
+        let row_main = row![label, Space::with_width(Length::Fill), toggle].spacing(8);
+
+        let mut col = column![row_main].spacing(2);
+        if sub_open {
+            let mut lst = column![].spacing(2);
+            for opt in &opts {
+                let opt_icon = icon_for_sub(state, opt);
+                let lbl = opt.to_string();
+                let is_sel = *opt == current;
+                let mm = mime_clone.clone();
+                let mut btn = button(row![icon_widget(&opt_icon), text(lbl)].spacing(6));
+                btn = btn.on_press(Message::SetSub(mm, opt.clone()));
+                if is_sel {
+                    btn = btn.style(iced::widget::button::primary);
+                }
+                lst = lst.push(btn);
+            }
+            col = col.push(scrollable(lst).height(Length::Fixed(180.0)));
+        }
+        sub_col = sub_col.push(col);
     }
 
     let sub_scroll = scrollable(sub_col).height(Length::Fixed(300.0));
 
-    let card = container(column![header, main_row, sub_scroll].spacing(8))
+    let card = container(column![header, main_col, sub_scroll].spacing(8))
         .padding(12)
         .width(Length::Fill);
 

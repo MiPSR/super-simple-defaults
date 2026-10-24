@@ -121,6 +121,7 @@ fn parse_desktop(path: &Path) -> Option<AppEntry> {
     let mut mime_types: Vec<String> = Vec::new();
     let mut hidden = false;
     let mut no_display = false;
+    let mut icon = String::new();
     for line in content.lines() {
         let line = line.trim();
         if line.is_empty() {
@@ -158,6 +159,7 @@ fn parse_desktop(path: &Path) -> Option<AppEntry> {
                 }
                 "Hidden" => hidden = v.eq_ignore_ascii_case("true"),
                 "NoDisplay" => no_display = v.eq_ignore_ascii_case("true"),
+                "Icon" => icon = v.to_string(),
                 _ => {}
             }
         }
@@ -187,6 +189,7 @@ fn parse_desktop(path: &Path) -> Option<AppEntry> {
         id,
         name,
         mime_types,
+        icon: resolve_icon(if icon.is_empty() { None } else { Some(&icon) }),
     })
 }
 
@@ -341,4 +344,56 @@ pub fn write_mimeapps(defaults: &BTreeMap<String, String>) -> Result<(), String>
     fs::write(&tmp, out).map_err(|e| e.to_string())?;
     fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
     Ok(())
+}
+
+pub fn resolve_icon(raw: Option<&str>) -> Option<PathBuf> {
+    let raw = raw?.trim();
+    if raw.is_empty() {
+        return None;
+    }
+    // Absolute path
+    let p = PathBuf::from(raw);
+    if p.is_absolute() && p.exists() {
+        return Some(p);
+    }
+
+    let exts = ["png", "svg", "xpm", "ico"];
+    // Direct basename candidates
+    for base in data_dirs() {
+        // pixmaps
+        let pix = base.join("pixmaps");
+        for ext in &exts {
+            let cand = pix.join(format!("{}.{}", raw, ext));
+            if cand.exists() {
+                return Some(cand);
+            }
+        }
+        // icons: search hicolor and other themes
+        let icons = base.join("icons");
+        if icons.is_dir() {
+            // BFS for file with matching stem
+            let mut stack = vec![icons];
+            while let Some(dir) = stack.pop() {
+                if let Ok(entries) = fs::read_dir(&dir) {
+                    for e in entries.flatten() {
+                        let path = e.path();
+                        if path.is_dir() {
+                            stack.push(path);
+                            continue;
+                        }
+                        if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                            if stem == raw {
+                                if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
+                                    if exts.contains(&ext) {
+                                        return Some(path);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
 }
