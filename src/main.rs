@@ -2,7 +2,7 @@ mod mime;
 mod model;
 
 use crate::model::*;
-use iced::widget::{button, column, container, image, row, scrollable, svg, text, Space};
+use iced::widget::{button, column, container, image, row, scrollable, svg, text, text_input, Space};
 use iced::{Element, Length, Task};
 use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -15,7 +15,6 @@ fn main() -> iced::Result {
 }
 
 fn detect_dark() -> bool {
-    // Try freedesktop portal (works on Wayland/Niri if a portal backend is present).
     if let Ok(out) = std::process::Command::new("dbus-send")
         .args([
             "--session",
@@ -36,7 +35,6 @@ fn detect_dark() -> bool {
             return false;
         }
     }
-    // Fallback: GNOME gsettings.
     if let Ok(out) = std::process::Command::new("gsettings")
         .args(["get", "org.gnome.desktop.interface", "color-scheme"])
         .output()
@@ -49,7 +47,6 @@ fn detect_dark() -> bool {
             return false;
         }
     }
-    // Fallback: env hint.
     if let Ok(v) = std::env::var("GTK_THEME") {
         if v.to_lowercase().contains("dark") {
             return true;
@@ -58,7 +55,6 @@ fn detect_dark() -> bool {
             return false;
         }
     }
-    // Default dark.
     true
 }
 
@@ -66,8 +62,6 @@ fn build_state() -> State {
     let mimes = mime::enumerate_mimes();
     let apps = mime::enumerate_apps();
 
-    // Collect any MIME types referenced by apps but missing from the mime db
-    // (e.g. x-scheme-handler/http, mailto, tel) so every case is covered.
     let mut mime_name: HashMap<String, String> = HashMap::new();
     for m in &mimes {
         mime_name.insert(m.mime.clone(), m.name.clone());
@@ -79,81 +73,35 @@ fn build_state() -> State {
     }
     let apps_by_id: HashMap<String, AppEntry> = apps.iter().map(|a| (a.id.clone(), a.clone())).collect();
 
-    // group mimes by media (top-level before '/')
-    let mut groups: BTreeMap<String, Vec<String>> = BTreeMap::new();
-    for mtype in mime_name.keys() {
-        let media = mtype.split('/').next().unwrap_or("other").to_string();
-        groups.entry(media).or_default().push(mtype.clone());
-    }
-
     let current = mime::read_mimeapps();
 
-    // Build categories
-    let mut categories: Vec<CategoryState> = Vec::new();
-    for (media, mime_list) in groups {
-        // skip empty
-        if mime_list.is_empty() {
-            continue;
-        }
-        // sort mimes
-        let mut mimes_sorted = mime_list.clone();
-        mimes_sorted.sort();
-
-        // infer common default
-        let defaults: Vec<Option<String>> = mimes_sorted
-            .iter()
-            .map(|m| current.get(m).cloned())
-            .collect();
-        // common app among Some
-        let mut common: Option<String> = None;
-        let some_vals: Vec<&String> = defaults.iter().filter_map(|x| x.as_ref()).collect();
-        if !some_vals.is_empty() {
-            let first = some_vals[0];
-            if some_vals.iter().all(|x| *x == first) {
-                common = Some(first.clone());
+    let mut entries: Vec<MimeDefaultState> = mime_name
+        .iter()
+        .map(|(m, n)| {
+            let cur = current.get(m).cloned();
+            let default = match cur {
+                Some(id) => Choice::App(id.clone(), app_name(&apps_by_id, &id)),
+                None => Choice::None,
+            };
+            MimeDefaultState {
+                mime: m.clone(),
+                name: n.clone(),
+                default,
             }
-        }
+        })
+        .collect();
 
-        let mut overrides: HashMap<String, SubChoice> = HashMap::new();
-        for (i, m) in mimes_sorted.iter().enumerate() {
-            let cur = &defaults[i];
-            if common.is_some() && cur.as_ref() == common.as_ref() {
-                overrides.insert(m.clone(), SubChoice::Inherit);
-            } else {
-                match cur {
-                    Some(id) => overrides.insert(m.clone(), SubChoice::App(id.clone(), app_name(&apps_by_id, id))),
-                    None => overrides.insert(m.clone(), SubChoice::Inherit),
-                };
-            }
-        }
-
-        let main = match &common {
-            Some(id) => Choice::App(id.clone(), app_name(&apps_by_id, id)),
-            None => Choice::None,
-        };
-
-        let mut mime_names = HashMap::new();
-        for m in &mimes_sorted {
-            if let Some(n) = mime_name.get(m) {
-                mime_names.insert(m.clone(), n.clone());
-            }
-        }
-
-        categories.push(CategoryState {
-            label: media_label(&media),
-            mimes: mimes_sorted,
-            mime_names,
-            main,
-            overrides,
-        });
-    }
-
-    // sort categories by label
-    categories.sort_by(|a, b| a.label.cmp(&b.label));
+    entries.sort_by(|a, b| {
+        a.name
+            .to_lowercase()
+            .cmp(&b.name.to_lowercase())
+            .then(a.mime.cmp(&b.mime))
+    });
 
     State {
         apps,
-        categories,
+        entries,
+        search: String::new(),
         status: String::new(),
         dirty: false,
         dark: detect_dark(),
@@ -165,114 +113,6 @@ fn app_name(map: &HashMap<String, AppEntry>, id: &str) -> String {
     map.get(id)
         .map(|a| a.name.clone())
         .unwrap_or_else(|| id.to_string())
-}
-
-fn update(state: &mut State, message: Message) -> Task<Message> {
-    match message {
-        Message::SetMain(cat_idx, choice) => {
-            if let Some(cat) = state.categories.get_mut(cat_idx) {
-                cat.main = choice;
-                state.dirty = true;
-            }
-            state.open = None;
-        }
-        Message::SetSub(mime, choice) => {
-            for cat in &mut state.categories {
-                if cat.mimes.contains(&mime) {
-                    cat.overrides.insert(mime.clone(), choice.clone());
-                    state.dirty = true;
-                }
-            }
-            state.open = None;
-        }
-        Message::Toggle(sel) => {
-            if state.open.as_ref() == Some(&sel) {
-                state.open = None;
-            } else {
-                state.open = Some(sel);
-            }
-        }
-        Message::Save => {
-            let mut map: BTreeMap<String, String> = BTreeMap::new();
-            // start from current file to preserve unknowns? We'll rebuild from state only, but keep unknown from read? 
-            // Read current to preserve entries not in our categories.
-            let current = mime::read_mimeapps();
-            let known: HashSet<String> = state
-                .categories
-                .iter()
-                .flat_map(|c| c.mimes.iter().cloned())
-                .collect();
-            for (k, v) in &current {
-                if !known.contains(k) {
-                    map.insert(k.clone(), v.clone());
-                }
-            }
-            for cat in &state.categories {
-                for m in &cat.mimes {
-                    let ov = cat.overrides.get(m).cloned().unwrap_or(SubChoice::Inherit);
-                    let eff = match ov {
-                        SubChoice::Inherit => match &cat.main {
-                            Choice::App(id, _) => Some(id.clone()),
-                            Choice::None => None,
-                        },
-                        SubChoice::None => None,
-                        SubChoice::App(id, _) => Some(id.clone()),
-                    };
-                    if let Some(id) = eff {
-                        map.insert(m.clone(), id);
-                    }
-                }
-            }
-            match mime::write_mimeapps(&map) {
-                Ok(()) => {
-                    state.status = "Saved.".to_string();
-                    state.dirty = false;
-                }
-                Err(e) => {
-                    state.status = format!("Save failed: {}", e);
-                }
-            }
-        }
-        Message::Reload => {
-            *state = build_state();
-        }
-    }
-    Task::none()
-}
-
-#[derive(Debug, Clone)]
-enum Message {
-    SetMain(usize, Choice),
-    SetSub(String, SubChoice),
-    Toggle(OpenSelector),
-    Save,
-    Reload,
-}
-
-fn view<'a>(state: &'a State) -> Element<'a, Message> {
-    let title = text("Default Applications").size(24);
-
-    let mut save_btn = button("Save");
-    if state.dirty {
-        save_btn = save_btn.on_press(Message::Save);
-    }
-    let reload_btn = button("Reload").on_press(Message::Reload);
-
-    let status = text(&state.status);
-
-    let header = row![title, Space::with_width(Length::Fill), save_btn, reload_btn, status]
-        .spacing(8)
-        .align_y(iced::Alignment::Center);
-
-    // categories
-    let mut cats_col = column![].spacing(12);
-    for (idx, cat) in state.categories.iter().enumerate() {
-        cats_col = cats_col.push(category_view(state, idx, cat));
-    }
-
-    let body = scrollable(cats_col).height(Length::Fill);
-
-    column![header, body].spacing(12).padding(12).into()
 }
 
 fn app_icon(state: &State, id: &str) -> Option<std::path::PathBuf> {
@@ -303,112 +143,153 @@ fn icon_for_choice(state: &State, c: &Choice) -> Option<std::path::PathBuf> {
     }
 }
 
-fn icon_for_sub(state: &State, c: &SubChoice) -> Option<std::path::PathBuf> {
-    match c {
-        SubChoice::App(id, _) => app_icon(state, id),
-        _ => None,
+fn update(state: &mut State, message: Message) -> Task<Message> {
+    match message {
+        Message::SetDefault(mime, choice) => {
+            if let Some(e) = state.entries.iter_mut().find(|e| e.mime == mime) {
+                e.default = choice;
+                state.dirty = true;
+            }
+            state.open = None;
+        }
+        Message::Toggle(mime) => {
+            if state.open.as_ref() == Some(&mime) {
+                state.open = None;
+            } else {
+                state.open = Some(mime);
+            }
+        }
+        Message::SetSearch(q) => {
+            state.search = q;
+        }
+        Message::Save => {
+            let mut map: BTreeMap<String, String> = BTreeMap::new();
+            let current = mime::read_mimeapps();
+            let known: HashSet<String> = state.entries.iter().map(|e| e.mime.clone()).collect();
+            for (k, v) in &current {
+                if !known.contains(k) {
+                    map.insert(k.clone(), v.clone());
+                }
+            }
+            for e in &state.entries {
+                if let Choice::App(id, _) = &e.default {
+                    map.insert(e.mime.clone(), id.clone());
+                }
+            }
+            match mime::write_mimeapps(&map) {
+                Ok(()) => {
+                    state.status = "Saved.".to_string();
+                    state.dirty = false;
+                }
+                Err(err) => {
+                    state.status = format!("Save failed: {}", err);
+                }
+            }
+        }
+        Message::Reload => {
+            *state = build_state();
+        }
     }
+    Task::none()
 }
 
-fn category_view<'a>(state: &'a State, idx: usize, cat: &'a CategoryState) -> Element<'a, Message> {
-    let header = text(&cat.label).size(18);
+#[derive(Debug, Clone)]
+enum Message {
+    SetDefault(String, Choice),
+    Toggle(String),
+    SetSearch(String),
+    Save,
+    Reload,
+}
 
-    // main selector options
-    let mut main_options: Vec<Choice> = vec![Choice::None];
-    let apps = state.apps_for_category(cat);
-    for a in &apps {
-        main_options.push(Choice::App(a.id.clone(), a.name.clone()));
+fn view<'a>(state: &'a State) -> Element<'a, Message> {
+    let title = text("Default Applications").size(24);
+
+    let mut save_btn = button("Save");
+    if state.dirty {
+        save_btn = save_btn.on_press(Message::Save);
     }
-    // ensure current main is present
-    if let Choice::App(id, name) = &cat.main {
-        if !main_options.iter().any(|c| matches!(c, Choice::App(x, _) if x == id)) {
-            main_options.push(Choice::App(id.clone(), name.clone()));
-        }
-    }
+    let reload_btn = button("Reload").on_press(Message::Reload);
 
-    let main_open = state.open == Some(OpenSelector::Main(idx));
-    let main_label = cat.main.to_string();
-    let main_icon = icon_for_choice(state, &cat.main);
+    let status = text(&state.status);
 
-    let main_toggle = button(row![icon_widget(&main_icon), text(main_label)].spacing(6))
-        .on_press(Message::Toggle(OpenSelector::Main(idx)));
-    let mut main_col = column![row![text("Main default:"), Space::with_width(Length::Fill), main_toggle].spacing(8)].spacing(4);
-    if main_open {
-        let mut list = column![].spacing(2);
-        for opt in &main_options {
-            let opt_icon = icon_for_choice(state, opt);
-            let label = opt.to_string();
-            let is_sel = *opt == cat.main;
-            let mut btn = button(row![icon_widget(&opt_icon), text(label)].spacing(6));
-            btn = btn.on_press(Message::SetMain(idx, opt.clone()));
-            if is_sel {
-                btn = btn.style(iced::widget::button::primary);
-            }
-            list = list.push(btn);
-        }
-        main_col = main_col.push(scrollable(list).height(Length::Fixed(220.0)));
-    }
+    let header = row![title, Space::with_width(Length::Fill), save_btn, reload_btn, status]
+        .spacing(8)
+        .align_y(iced::Alignment::Center);
 
-    // subelements
-    let capable_apps_cache = state.apps_for_category(cat);
+    let search = text_input("Search MIME types or names...", &state.search)
+        .on_input(Message::SetSearch)
+        .width(Length::Fill);
 
-    let mut sub_col = column![].spacing(4);
-    for m in &cat.mimes {
-        let name = cat.mime_names.get(m).cloned().unwrap_or_else(|| m.clone());
-        let label = text(format!("{} ({})", name, m)).size(13);
+    let query = state.search.to_lowercase();
+    let filtered: Vec<&MimeDefaultState> = state
+        .entries
+        .iter()
+        .filter(|e| {
+            query.is_empty()
+                || e.name.to_lowercase().contains(&query)
+                || e.mime.to_lowercase().contains(&query)
+        })
+        .collect();
 
-        // options for this mime
-        let mut opts: Vec<SubChoice> = vec![SubChoice::Inherit, SubChoice::None];
-        let mime_apps = state.apps_for_mime(m);
-        let list = if mime_apps.is_empty() {
-            capable_apps_cache.clone()
-        } else {
-            mime_apps
-        };
-        for a in list {
-            opts.push(SubChoice::App(a.id.clone(), a.name.clone()));
-        }
-        let current = cat.overrides.get(m).cloned().unwrap_or(SubChoice::Inherit);
-        // ensure current is present
-        if let SubChoice::App(id, namev) = &current {
-            if !opts.iter().any(|c| matches!(c, SubChoice::App(x, _) if x == id)) {
-                opts.push(SubChoice::App(id.clone(), namev.clone()));
-            }
-        }
+    let mut list = column![].spacing(4);
+    for e in filtered {
+        let mime = e.mime.clone();
+        let is_open = state.open.as_ref() == Some(&mime);
+        let cur_icon = icon_for_choice(state, &e.default);
+        let toggle = button(row![icon_widget(&cur_icon), text(e.default.to_string())].spacing(6))
+            .on_press(Message::Toggle(mime.clone()));
 
-        let sub_open = state.open == Some(OpenSelector::Sub(m.clone()));
-        let cur_label = current.to_string();
-        let cur_icon = icon_for_sub(state, &current);
-        let mime_clone = m.clone();
-        let toggle = button(row![icon_widget(&cur_icon), text(cur_label)].spacing(6))
-            .on_press(Message::Toggle(OpenSelector::Sub(m.clone())));
+        let label = text(format!("{} ({})", e.name, e.mime)).size(13);
         let row_main = row![label, Space::with_width(Length::Fill), toggle].spacing(8);
 
         let mut col = column![row_main].spacing(2);
-        if sub_open {
+        if is_open {
+            let mut opts: Vec<AppEntry> = state.apps_for_mime(&e.mime);
+            if opts.is_empty() {
+                opts = state.apps.clone();
+            }
+            // ensure current app present
+            if let Choice::App(id, name) = &e.default {
+                if !opts.iter().any(|a| a.id == *id) {
+                    opts.push(AppEntry {
+                        id: id.clone(),
+                        name: name.clone(),
+                        mime_types: Vec::new(),
+                        icon: app_icon(state, id),
+                    });
+                }
+            }
+            opts.sort_by(|a, b| a.name.cmp(&b.name));
+
             let mut lst = column![].spacing(2);
-            for opt in &opts {
-                let opt_icon = icon_for_sub(state, opt);
-                let lbl = opt.to_string();
-                let is_sel = *opt == current;
-                let mm = mime_clone.clone();
-                let mut btn = button(row![icon_widget(&opt_icon), text(lbl)].spacing(6));
-                btn = btn.on_press(Message::SetSub(mm, opt.clone()));
+            for a in &opts {
+                let choice = Choice::App(a.id.clone(), a.name.clone());
+                let is_sel = e.default == choice;
+                let icon = a.icon.clone();
+                let mut btn = button(row![icon_widget(&icon), text(a.name.clone())].spacing(6));
+                btn = btn.on_press(Message::SetDefault(mime.clone(), choice));
                 if is_sel {
                     btn = btn.style(iced::widget::button::primary);
                 }
                 lst = lst.push(btn);
             }
-            col = col.push(scrollable(lst).height(Length::Fixed(180.0)));
+            col = col.push(scrollable(lst).height(Length::Fixed(200.0)));
         }
-        sub_col = sub_col.push(col);
+        list = list.push(col);
     }
 
-    let sub_scroll = scrollable(sub_col).height(Length::Fixed(300.0));
+    let body = scrollable(list).height(Length::Fill);
 
-    let card = container(column![header, main_col, sub_scroll].spacing(8))
+    let content = column![header, search, body]
+        .spacing(12)
         .padding(12)
-        .width(Length::Fill);
+        .width(Length::Fixed(900.0));
 
-    card.into()
+    container(content)
+        .center_x(Length::Fill)
+        .into()
 }
+
+// keep State method apps_for_mime (defined in model? it's on State in model.rs)
+// Need apps_for_mime exists; it does. apps_for_category removed usage.
