@@ -244,32 +244,67 @@ pub fn enumerate_apps() -> Vec<AppEntry> {
 
 pub fn read_mimeapps() -> BTreeMap<String, String> {
     let mut map = BTreeMap::new();
-    let path = mimeapps_path();
-    if let Ok(content) = fs::read_to_string(&path) {
-        let mut in_default = false;
-        for line in content.lines() {
-            let t = line.trim();
-            if t.starts_with('[') {
-                in_default = t == "[Default Applications]";
-                continue;
-            }
-            if in_default {
-                if let Some((k, v)) = t.split_once('=') {
-                    let k = k.trim();
-                    let v = v.trim();
-                    if !k.is_empty() && !v.is_empty() {
-                        map.insert(k.to_string(), v.to_string());
+
+    // Candidate files in priority order (first wins).
+    let mut candidates: Vec<PathBuf> = Vec::new();
+
+    // User config
+    candidates.push(mimeapps_path());
+
+    // User data
+    if let Ok(home) = std::env::var("HOME") {
+        let xdg_data_home = std::env::var("XDG_DATA_HOME")
+            .unwrap_or_else(|_| format!("{}/.local/share", home));
+        candidates.push(PathBuf::from(xdg_data_home).join("applications/mimeapps.list"));
+    }
+
+    // XDG config dirs
+    let config_dirs = std::env::var("XDG_CONFIG_DIRS")
+        .unwrap_or_else(|_| "/etc/xdg".to_string());
+    for d in config_dirs.split(':') {
+        if !d.is_empty() {
+            candidates.push(PathBuf::from(d).join("mimeapps.list"));
+            candidates.push(PathBuf::from(d).join("applications/mimeapps.list"));
+        }
+    }
+
+    // XDG data dirs (system defaults, e.g. kde-mimeapps.list)
+    let data_dirs_env = std::env::var("XDG_DATA_DIRS")
+        .unwrap_or_else(|_| "/usr/local/share:/usr/share".to_string());
+    let mut all_data_dirs: Vec<PathBuf> = data_dirs_env
+        .split(':')
+        .filter(|d| !d.is_empty())
+        .map(PathBuf::from)
+        .collect();
+    // NixOS system sw
+    all_data_dirs.push(PathBuf::from("/run/current-system/sw/share"));
+    for base in all_data_dirs {
+        let appdir = base.join("applications");
+        for name in [
+            "mimeapps.list",
+            "kde-mimeapps.list",
+            "defaults.list",
+        ] {
+            candidates.push(appdir.join(name));
+        }
+        // Also any *mimeapps.list
+        if let Ok(entries) = fs::read_dir(&appdir) {
+            for e in entries.flatten() {
+                let p = e.path();
+                if let Some(n) = p.file_name().and_then(|s| s.to_str()) {
+                    if n.ends_with("mimeapps.list") && n != "mimeapps.list" && n != "kde-mimeapps.list" {
+                        candidates.push(p);
                     }
                 }
             }
         }
     }
-    // also user data dir mimeapps.list
-    if let Ok(home) = std::env::var("HOME") {
-        let xdg_data_home = std::env::var("XDG_DATA_HOME")
-            .unwrap_or_else(|_| format!("{}/.local/share", home));
-        let p = PathBuf::from(xdg_data_home).join("applications/mimeapps.list");
-        if let Ok(content) = fs::read_to_string(&p) {
+
+    let filenames = ["[Default Applications]"];
+    let _ = filenames;
+
+    for path in candidates {
+        if let Ok(content) = fs::read_to_string(&path) {
             let mut in_default = false;
             for line in content.lines() {
                 let t = line.trim();

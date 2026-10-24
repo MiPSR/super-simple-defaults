@@ -8,7 +8,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 fn main() -> iced::Result {
     let state = build_state();
-    iced::application("Default Applications", update, view)
+    iced::application("Super Simple Defaults", update, view)
         .settings(iced::Settings::default())
         .theme(|s: &State| if s.dark { iced::Theme::Dark } else { iced::Theme::Light })
         .run_with(move || (state, Task::none()))
@@ -276,8 +276,8 @@ fn view<'a>(state: &'a State) -> Element<'a, Message> {
         })
         .collect();
 
-    let mut list = column![].spacing(4);
-    for e in filtered {
+    let mut list = column![].spacing(2);
+    for (i, e) in filtered.into_iter().enumerate() {
         let mime = e.mime.clone();
         let is_open = state.open.as_ref() == Some(&mime);
         let cur_icon = icon_for_choice(state, &e.default);
@@ -285,7 +285,26 @@ fn view<'a>(state: &'a State) -> Element<'a, Message> {
             .on_press(Message::Toggle(mime.clone()));
 
         let label = text(format!("{} ({})", e.name, e.mime)).size(13);
-        let row_main = row![label, Space::with_width(Length::Fill), toggle].spacing(8);
+        let row_main = row![label, Space::with_width(Length::Fill), toggle, Space::with_width(12)].spacing(8);
+
+        let alt_bg = if state.dark {
+            if i % 2 == 0 {
+                iced::Color::from_rgb(0.16, 0.16, 0.18)
+            } else {
+                iced::Color::from_rgb(0.12, 0.12, 0.14)
+            }
+        } else {
+            if i % 2 == 0 {
+                iced::Color::from_rgb(0.96, 0.96, 0.97)
+            } else {
+                iced::Color::from_rgb(0.90, 0.90, 0.92)
+            }
+        };
+
+        let row_main = container(row_main)
+            .padding(4)
+            .width(Length::Fill)
+            .style(move |_theme| iced::widget::container::background(alt_bg));
 
         let mut col = column![row_main].spacing(2);
         if is_open {

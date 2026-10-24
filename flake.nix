@@ -18,14 +18,14 @@
       };
 
       packages.${system}.default = pkgs.rustPlatform.buildRustPackage {
-        pname = "defaults";
+        pname = "super-simple-defaults";
         version = "0.1.0";
         src = ./.;
         cargoLock.lockFile = ./Cargo.lock;
         nativeBuildInputs = [ pkgs.pkg-config pkgs.makeWrapper ];
         buildInputs = libs;
         postFixup = ''
-          wrapProgram $out/bin/defaults --prefix LD_LIBRARY_PATH : "${libPath}"
+          wrapProgram $out/bin/super-simple-defaults --prefix LD_LIBRARY_PATH : "${libPath}"
         '';
       };
     };
