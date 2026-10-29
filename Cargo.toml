@@ -2,7 +2,19 @@
 name = "super-simple-defaults"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.88"
+description = "A native default-application editor"
+license-file = "LICENSE"
+
+[[bin]]
+name = "ssd"
+path = "src/main.rs"
 
 [dependencies]
-iced = { version = "0.13", features = ["image", "svg"] }
-dirs = "5"
+iced = { version = "0.13", features = ["image", "svg", "tokio"] }
+tokio = { version = "1", features = ["process", "time", "rt-multi-thread"] }
+zbus = { version = "4", default-features = false, features = ["tokio"] }
+tempfile = "3"
+fs2 = "0.4"
+roxmltree = "0.20"
+image = { version = "0.24", default-features = false, features = ["png", "jpeg", "ico"] }

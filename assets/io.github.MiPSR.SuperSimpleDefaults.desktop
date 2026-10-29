@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Super Simple Defaults
+Comment=Choose default applications and ordered fallbacks
+Exec=ssd
+Icon=io.github.MiPSR.SuperSimpleDefaults
+Terminal=false
+Categories=Settings;DesktopSettings;
+Keywords=defaults;applications;MIME;files;
+StartupNotify=true
+StartupWMClass=io.github.MiPSR.SuperSimpleDefaults

@@ -1,61 +1,79 @@
-use std::fmt;
-
-#[derive(Clone, PartialEq, Debug)]
-pub enum Choice {
-    None,                    // no default (for category main)
-    App(String, String),     // desktop id, display name
-}
-
-impl fmt::Display for Choice {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Choice::None => write!(f, "None"),
-            Choice::App(_, name) => write!(f, "{}", name),
-        }
-    }
-}
+use std::collections::BTreeMap;
 
 #[derive(Clone, Debug)]
 pub struct AppEntry {
     pub id: String,
     pub name: String,
     pub mime_types: Vec<String>,
-    pub icon: Option<std::path::PathBuf>,
+    pub icon_name: String,
+    pub origin: usize,
 }
 
 #[derive(Clone, Debug)]
 pub struct MimeEntry {
     pub mime: String,
     pub name: String,
+    pub choices: Vec<String>,
+    pub original: Vec<String>,
+    pub associated: Vec<String>,
+    pub effective: Option<String>,
+    pub user_override: bool,
+    pub inherit: bool,
 }
 
-#[derive(Clone, Debug)]
-pub struct MimeDefaultState {
-    pub mime: String,
-    pub name: String,
-    pub default: Choice,
+impl MimeEntry {
+    pub fn changed(&self) -> bool {
+        self.inherit || self.choices != self.original
+    }
 }
 
-#[derive(Clone, Debug)]
-pub struct State {
-    pub apps: Vec<AppEntry>,
-    pub entries: Vec<MimeDefaultState>,
-    pub search: String,
-    pub status: String,
-    pub dirty: bool,
-    pub dark: bool,
-    pub open: Option<String>,
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Edit {
+    Set(Vec<String>),
+    Inherit,
 }
 
-impl State {
-    pub fn apps_for_mime(&self, mime: &str) -> Vec<AppEntry> {
-        let mut v: Vec<AppEntry> = self
-            .apps
-            .iter()
-            .filter(|a| a.mime_types.iter().any(|m| m == mime))
-            .cloned()
-            .collect();
-        v.sort_by(|a, b| a.name.cmp(&b.name));
-        v
+pub type Edits = BTreeMap<String, Edit>;
+
+pub fn edits(entries: &[MimeEntry]) -> Edits {
+    entries
+        .iter()
+        .filter(|entry| entry.changed())
+        .map(|entry| {
+            (
+                entry.mime.clone(),
+                if entry.inherit {
+                    Edit::Inherit
+                } else {
+                    Edit::Set(entry.choices.clone())
+                },
+            )
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_actual_edits_are_dirty_and_reverting_cleans_them() {
+        let mut entry = MimeEntry {
+            mime: "text/plain".into(),
+            name: "Text".into(),
+            choices: vec!["a.desktop".into()],
+            original: vec!["a.desktop".into()],
+            associated: vec![],
+            effective: None,
+            user_override: false,
+            inherit: false,
+        };
+        assert!(edits(&[entry.clone()]).is_empty());
+        entry.choices.push("b.desktop".into());
+        assert_eq!(edits(&[entry.clone()]).len(), 1);
+        entry.choices.pop();
+        assert!(edits(&[entry.clone()]).is_empty());
+        entry.inherit = true;
+        assert_eq!(edits(&[entry])["text/plain"], Edit::Inherit);
     }
 }
