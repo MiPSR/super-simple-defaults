@@ -872,16 +872,17 @@ fn view(state: &State) -> Element<'_, Message> {
             .width(Length::Fill)
             .height(Length::Fill)
             .into();
-    if let Some(dialog) = &state.dialog {
+    let overlay: Element<'_, Message> = if let Some(dialog) = &state.dialog {
         let panel = dialog_view(state, dialog);
         let shade = container(panel)
             .center(Length::Fill)
             .padding(24)
             .style(|_| container::background(Color::from_rgba(0.0, 0.0, 0.0, 0.6)));
-        stack![content, opaque(shade)].into()
+        opaque(shade).into()
     } else {
-        content
-    }
+        Space::new(Length::Shrink, Length::Shrink).into()
+    };
+    stack![content, overlay].into()
 }
 
 fn dialog_view<'a>(state: &'a State, dialog: &'a Dialog) -> Element<'a, Message> {
