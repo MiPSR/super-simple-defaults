@@ -20,6 +20,7 @@ use rune::{
     TextStyle, Tx, col, el, row, text,
 };
 use rune_kit::glyphs::{CHEVRON_DOWN, CHEVRON_UP};
+use rune_kit::ScrollBar;
 use rune_kit::{
     Button, ButtonVariant, ControlSize, Dialog, Divider, IconButton, Kit, PaletteSeed, TextInput,
     root,
@@ -245,6 +246,15 @@ impl State {
             .map(|(i, a)| (a.id.clone(), i))
             .collect();
         self.data = Some(data);
+        // The resolver tracks the loaded snapshot's roots and the selected
+        // theme; every install rebuilds it, as the theme may have changed.
+        if let Some(paths) = self.data.as_ref().map(|d| d.snapshot.paths.clone()) {
+            self.icon_resolver = Arc::new(Mutex::new(icons::Resolver::new(
+                &paths,
+                self.icon_theme.clone(),
+                ICON_SCALE as u32,
+            )));
+        }
         self.filter();
         self.request_icons();
     }
@@ -962,6 +972,7 @@ fn list_area(s: &State) -> El {
                     },
                 ),
         )
+        .scroll_bar(&k)
 }
 
 fn icon_el(s: &State, app: usize) -> El {
@@ -1583,11 +1594,21 @@ mod tests {
         let applications = paths.data_home.join("applications");
         std::fs::create_dir_all(&applications).unwrap();
         std::fs::create_dir_all(&paths.config_home).unwrap();
+        // A bare icon name, as a real .desktop entry has, inside an icon-theme
+        // directory the resolver indexes.
+        std::fs::create_dir_all(paths.data_home.join("icons/hicolor/24x24/apps")).unwrap();
+        std::fs::write(
+            paths
+                .data_home
+                .join("icons/hicolor/24x24/apps/example.svg"),
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\"/>",
+        )
+        .unwrap();
         for name in ["a", "b"] {
             std::fs::write(
                 applications.join(format!("{name}.desktop")),
                 format!(
-                    "[Desktop Entry]\nType=Application\nName={name}\nExec=example\nMimeType=text/plain;\n"
+                    "[Desktop Entry]\nType=Application\nName={name}\nExec=example\nMimeType=text/plain;\nIcon=example\n"
                 ),
             )
             .unwrap();
@@ -1600,6 +1621,17 @@ mod tests {
         let mut state = State::default();
         state.install(mime::load(paths).unwrap());
         (tmp, state)
+    }
+
+    #[test]
+    fn install_rebuilds_the_icon_resolver_from_the_loaded_paths() {
+        let (_tmp, state) = fixture();
+        let name = state.data.as_ref().unwrap().apps[0].icon_name.clone();
+        let paths = state.icon_resolver.lock().unwrap().resolve(vec![name.clone()]);
+        assert!(
+            paths.get(&name).is_some_and(|path| path.is_some()),
+            "a fresh state's install must wire the resolver to the snapshot's roots"
+        );
     }
 
     #[test]
