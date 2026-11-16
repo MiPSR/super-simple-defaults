@@ -879,7 +879,7 @@ fn header(s: &State, k: &Kit) -> El {
 
 fn filters(s: &State, k: &Kit) -> El {
     let summary = format!(
-        "{} types · {} changed · + adds an ordered fallback · System removes your override",
+        "{} types · {} changed · + adds an ordered fallback · the system-default chip restores the system default",
         s.filtered.len(),
         s.changed_count()
     );
@@ -1039,6 +1039,9 @@ fn mime_row(s: &State, index: usize, position: usize) -> El {
         );
     let mime = entry.mime.clone();
     let mut chips = Vec::new();
+    if let Some(id) = &entry.effective {
+        chips.push(system_chip(s, &k, &mime, id));
+    }
     for (slot, id) in entry.choices.iter().enumerate() {
         chips.push(choice_chip(s, &k, &mime, slot, id));
         chips.push(
@@ -1104,29 +1107,17 @@ fn mime_row(s: &State, index: usize, position: usize) -> El {
         .h(STRIP_HEIGHT)
         .center_y()
         .child(row().gap(4.0).center_y().children(chips));
-    let controls = col()
-        .key("controls")
-        .gap(2.0)
-        .child(
-            Button::new("Undo")
-                .control_size(ControlSize::Small)
-                .disabled(lock || !changed)
-                .on_press({
-                    let mime = mime.clone();
-                    move |s: &mut State| undo_choice(s, mime.clone())
-                })
-                .build(&k),
-        )
-        .child(
-            Button::new("System")
-                .control_size(ControlSize::Small)
-                .disabled(lock || !(entry.user_override || changed))
-                .on_press({
-                    let mime = mime.clone();
-                    move |s: &mut State| inherit_choice(s, mime.clone())
-                })
-                .build(&k),
-        );
+    let undo = changed.then(|| {
+        Button::new("Undo")
+            .control_size(ControlSize::Small)
+            .disabled(lock)
+            .on_press({
+                let mime = mime.clone();
+                move |s: &mut State| undo_choice(s, mime.clone())
+            })
+            .build(&k)
+            .key(format!("undo-{mime}"))
+    });
     let background = if changed {
         k.c.bg_accent.alpha(0.22)
     } else if position.is_multiple_of(2) {
@@ -1134,17 +1125,78 @@ fn mime_row(s: &State, index: usize, position: usize) -> El {
     } else {
         Color::TRANSPARENT
     };
-    row()
+    let line = row()
         .w_full()
         .h(ROW_HEIGHT)
-        .padding(8.0)
+        .pt(8.0)
+        .pb(8.0)
+        .pl(20.0)
+        .pr(20.0)
         .gap(10.0)
         .center_y()
         .fill(background)
         .radius(k.radius.xs)
         .child(label)
-        .child(strip)
-        .child(controls)
+        .child(strip);
+    match undo {
+        Some(undo) => line.child(undo),
+        None => line,
+    }
+}
+
+/// The currently effective default, shown at the top of the strip: a muted
+/// chip with a "default system app" tag. Pressing it removes the entry's
+/// override so the system default applies again.
+fn system_chip(s: &State, k: &Kit, mime: &str, id: &str) -> El {
+    let name = s.app_name(id);
+    let icon = s
+        .apps
+        .get(id)
+        .map(|&app| icon_el(s, app))
+        .unwrap_or_else(|| el().size(ICON_PT, ICON_PT));
+    let actionable = s.available() && {
+        let data = s.data.as_ref().expect("rows require loaded data");
+        data.entries
+            .iter()
+            .find(|e| e.mime == mime)
+            .is_some_and(|e| e.user_override || e.changed())
+    };
+    let mime = mime.to_string();
+    let chip = el()
+        .key(format!("system-default-{mime}"))
+        .role("button")
+        .label(format!("Restore the system default: {name}"))
+        .focusable(true)
+        .h(CHIP_HEIGHT)
+        .pl(8.0)
+        .pr(10.0)
+        .gap(6.0)
+        .center_y()
+        .radius(k.radius.sm)
+        .fill(Color::TRANSPARENT)
+        .border(1.0, k.c.border_muted)
+        .child(icon)
+        .child(
+            col()
+                .gap(1.0)
+                .child(
+                    text(&name)
+                        .font(k.ty.ui_compact)
+                        .color(theme_of(s).text_secondary)
+                        .truncate()
+                        .max_w(160.0),
+                )
+                .child(
+                    text("default system app")
+                        .font(k.ty.small)
+                        .color(k.c.text_faint),
+                ),
+        );
+    if actionable {
+        k.interactive(chip.on_press(move |s: &mut State| inherit_choice(s, mime.clone())))
+    } else {
+        chip
+    }
 }
 
 fn choice_chip(s: &State, k: &Kit, mime: &str, slot: usize, id: &str) -> El {
@@ -1427,7 +1479,8 @@ fn picker_dialog(s: &State, k: &Kit, entry: usize, slot: Option<usize>, layer: &
                         .grow(1.0)
                         .min_h(0.0)
                         .scroll(ScrollSpec { stick_bottom: false })
-                        .child(col().gap(2.0).children(items)),
+                        .child(col().gap(2.0).children(items))
+                        .scroll_bar(k),
                 )
                 .child(
                     row().justify_end().child(
@@ -1847,6 +1900,12 @@ mod tests {
         rt.frame(0.0);
         assert!(rt.find("ok").is_some(), "the footer is laid out");
         assert!(rt.find("mime-text/plain").is_some(), "the row is mounted");
+        // The system-default chip is there; the row has no Undo while clean.
+        assert!(
+            rt.find("system-default-text/plain").is_some(),
+            "the system-default chip is mounted"
+        );
+        assert!(rt.find("undo-text/plain").is_none(), "no Undo while clean");
         rt.update(|s: &mut State, _| remove_choice(s, "text/plain".into(), 0));
         rt.frame(1.0 / 60.0);
         let changed = rt
@@ -1854,6 +1913,7 @@ mod tests {
             .iter()
             .any(|e| e.text.as_deref() == Some("Unsaved changes"));
         assert!(changed, "the row shows its unsaved state");
+        assert!(rt.find("undo-text/plain").is_some(), "Undo appears");
         rt.update(|s: &mut State, _| undo_choice(s, "text/plain".into()));
         rt.frame(1.0 / 60.0);
         let changed = rt
@@ -1861,5 +1921,24 @@ mod tests {
             .iter()
             .any(|e| e.text.as_deref() == Some("Unsaved changes"));
         assert!(!changed, "undoing clears the row's unsaved state");
+        assert!(
+            rt.find("undo-text/plain").is_none(),
+            "Undo disappears once the row is clean"
+        );
+    }
+
+    #[test]
+    fn the_system_default_chip_clears_the_rows_override() {
+        let (_tmp, state) = fixture();
+        let mut rt = runtime_of(state);
+        rt.frame(0.0);
+        // Pressing the chip removes the override: the row becomes dirty with
+        // inherit set, as the old System button did.
+        rt.update(|s: &mut State, _| inherit_choice(s, "text/plain".into()));
+        rt.frame(1.0 / 60.0);
+        let entry = &rt.state.data.as_ref().unwrap().entries[0];
+        assert!(entry.inherit && entry.choices.is_empty(), "override cleared");
+        assert!(rt.state.dirty());
+        assert!(rt.find("undo-text/plain").is_some(), "Undo appears");
     }
 }

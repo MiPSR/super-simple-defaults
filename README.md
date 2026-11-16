@@ -28,8 +28,8 @@ The preview above shows the original iced interface. The current interface is bu
 - **+** adds another application until there are no unused installed applications left. An empty entry has no application dropdown, only **+**.
 - Applications are an **ordered fallback list**, not applications launched simultaneously. Use **↑ / ↓** to reorder and **−** to remove one. Unavailable applications in an existing list remain visible so they can be replaced or removed.
 - The application picker puts associated applications first. Choosing another application also creates the required user association when saved.
-- **Teal highlighting and a dot** identify pending changes. **Undo** restores a row's loaded state. Reverting all changes disables Cancel and Apply again.
-- **System** removes your explicit default for that MIME type when saved. The desktop may still choose an inherited default or an automatically preferred associated application: removing a default does not forbid opening that file type.
+- **Teal highlighting and a dot** identify pending changes. **Undo** restores a row's loaded state; it only shows while the row has pending changes. Reverting all changes disables Cancel and Apply again.
+- The muted **default system app** chip at the top of each row shows what the system currently uses. Pressing it removes your explicit default for that MIME type when saved; the desktop may still choose an inherited default or an automatically preferred associated application.
 - **Apply** writes only changed MIME entries. Unrelated defaults, association order, other sections, and comments are preserved. Inherited defaults are not copied wholesale into your user configuration.
 - Defaults changed externally for an edited MIME type produce a conflict dialog. You can cancel, or explicitly overwrite only your edited entries. External changes to unrelated entries are retained.
 - Configuration files edited outside the app are detected automatically and reloaded silently; pending edits are kept.
