@@ -1501,6 +1501,16 @@ fn main() {
                 install_fixture(s);
                 s.dark = false;
             }),
+            ("fixture-conflict", |s| {
+                install_fixture(s);
+                s.dialog = Some(Panel::Conflict(vec!["text/plain".into(), "image/png".into()]));
+            }),
+            ("fixture-error", |s| {
+                install_fixture(s);
+                s.dialog = Some(Panel::Error(
+                    "The configuration file could not be written.\nPermission denied".into(),
+                ));
+            }),
         ],
         ..AppSpec::new("Super Simple Defaults", (1120.0, 760.0), State::default, view)
     });
