@@ -1,40 +1,11 @@
-//! Indexed icon-theme lookup: no recursive icon-directory scans.
+//! Indexed icon-theme lookup: no recursive icon-directory scans. Decoding and
+//! rasterization are Rune's `ImageCache`'s job; this module only finds the files.
 use crate::config::Paths;
 use std::collections::{BTreeMap, HashSet};
 use std::path::{Component, Path, PathBuf};
 
-#[derive(Clone, Debug)]
-pub enum LoadedIcon {
-    Svg(iced::widget::svg::Handle),
-    Raster(iced::widget::image::Handle),
-}
-
-pub type IconCache = BTreeMap<String, Option<LoadedIcon>>;
-
-fn decode(path: &Path) -> Option<LoadedIcon> {
-    let bytes = std::fs::read(path).ok()?;
-    if path.extension().is_some_and(|e| e == "svg") {
-        roxmltree::Document::parse(std::str::from_utf8(&bytes).ok()?).ok()?;
-        Some(LoadedIcon::Svg(iced::widget::svg::Handle::from_memory(
-            bytes,
-        )))
-    } else {
-        let mut reader = image::io::Reader::new(std::io::Cursor::new(bytes))
-            .with_guessed_format()
-            .ok()?;
-        let mut limits = image::io::Limits::default();
-        limits.max_image_width = Some(4096);
-        limits.max_image_height = Some(4096);
-        limits.max_alloc = Some(64 * 1024 * 1024);
-        reader.limits(limits);
-        let rgba = reader.decode().ok()?.into_rgba8();
-        Some(LoadedIcon::Raster(iced::widget::image::Handle::from_rgba(
-            rgba.width(),
-            rgba.height(),
-            rgba.into_raw(),
-        )))
-    }
-}
+/// Icon name → resolved file, `None` when the name has no icon anywhere.
+pub type IconPaths = BTreeMap<String, Option<PathBuf>>;
 
 #[derive(Clone)]
 struct Directory {
@@ -70,7 +41,7 @@ pub struct Resolver {
     selected: String,
     scale: u32,
     themes: BTreeMap<String, IconTheme>,
-    paths: BTreeMap<String, Option<PathBuf>>,
+    paths: IconPaths,
 }
 
 fn safe_relative(name: &str) -> bool {
@@ -100,6 +71,18 @@ fn ini(text: &str) -> BTreeMap<String, BTreeMap<String, String>> {
 }
 
 impl Resolver {
+    /// A resolver with no theme roots, for state built before the paths are known.
+    pub fn empty() -> Self {
+        Self {
+            roots: Vec::new(),
+            pixmaps: Vec::new(),
+            selected: "hicolor".into(),
+            scale: 2,
+            themes: BTreeMap::new(),
+            paths: BTreeMap::new(),
+        }
+    }
+
     pub fn new(paths: &Paths, theme: Option<String>, scale: u32) -> Self {
         let mut roots = Vec::new();
         if let Some(home) = std::env::var_os("HOME")
@@ -285,13 +268,13 @@ impl Resolver {
         found
     }
 
-    pub fn resolve(&mut self, names: Vec<String>) -> IconCache {
+    pub fn resolve(&mut self, names: Vec<String>) -> IconPaths {
         names
             .into_iter()
             .filter(|n| !n.is_empty())
             .map(|name| {
-                let decoded = self.find(&name).as_deref().and_then(decode);
-                (name, decoded)
+                let path = self.find(&name);
+                (name, path)
             })
             .collect()
     }
@@ -316,22 +299,6 @@ fn image_path(root: &Path, name: &str) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn svg_and_raster_bytes_are_loaded_on_the_worker() {
-        let tmp = tempfile::tempdir().unwrap();
-        let svg = tmp.path().join("icon.svg");
-        std::fs::write(
-            &svg,
-            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\"/>",
-        )
-        .unwrap();
-        assert!(matches!(decode(&svg), Some(LoadedIcon::Svg(_))));
-        let png = tmp.path().join("icon.png");
-        image::RgbaImage::new(2, 2).save(&png).unwrap();
-        assert!(matches!(decode(&png), Some(LoadedIcon::Raster(_))));
-        assert!(decode(&tmp.path().join("missing.svg")).is_none());
-    }
 
     #[test]
     fn indexed_theme_inheritance_size_and_cycles() {

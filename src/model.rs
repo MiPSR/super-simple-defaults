@@ -9,7 +9,7 @@ pub struct AppEntry {
     pub origin: usize,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Hash)]
 pub struct MimeEntry {
     pub mime: String,
     pub name: String,

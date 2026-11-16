@@ -11,10 +11,17 @@ name = "ssd"
 path = "src/main.rs"
 
 [dependencies]
-iced = { version = "0.13", features = ["image", "svg", "tokio"] }
-tokio = { version = "1", features = ["process", "time", "rt-multi-thread"] }
+rune = { git = "https://github.com/anomalyco/rune", rev = "eb5ae6c9f77b1a0051d8e1e5ee936ebea086bb90" }
+rune-kit = { git = "https://github.com/anomalyco/rune", rev = "eb5ae6c9f77b1a0051d8e1e5ee936ebea086bb90" }
 zbus = { version = "4", default-features = false, features = ["tokio"] }
+roxmltree = "0.20"
 tempfile = "3"
 fs2 = "0.4"
-roxmltree = "0.20"
-image = { version = "0.24", default-features = false, features = ["png", "jpeg", "ico"] }
+
+# Rune's dev revision patches published crates (see Rune's README, "Depending on Rune").
+[patch.crates-io]
+winit = { git = "https://github.com/anomalyco/rune", rev = "eb5ae6c9f77b1a0051d8e1e5ee936ebea086bb90" }
+parley_engine = { git = "https://github.com/anomalyco/rune", rev = "eb5ae6c9f77b1a0051d8e1e5ee936ebea086bb90" }
+wgpu-hal = { git = "https://github.com/anomalyco/rune", rev = "eb5ae6c9f77b1a0051d8e1e5ee936ebea086bb90" }
+accesskit_windows = { git = "https://github.com/anomalyco/rune", rev = "eb5ae6c9f77b1a0051d8e1e5ee936ebea086bb90" }
+accesskit_macos = { git = "https://github.com/anomalyco/rune", rev = "eb5ae6c9f77b1a0051d8e1e5ee936ebea086bb90" }
