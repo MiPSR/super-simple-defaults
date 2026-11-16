@@ -34,6 +34,7 @@ The preview above shows the original iced interface. The current interface is bu
 - Defaults changed externally for an edited MIME type produce a conflict dialog. You can cancel, or explicitly overwrite only your edited entries. External changes to unrelated entries are retained.
 - Configuration files edited outside the app are detected automatically and reloaded silently; pending edits are kept.
 - **OK** saves pending changes and closes; **Cancel** discards them and closes and is disabled while there is nothing to discard; **Apply** saves without closing. The footer stays visible under a thin rule while the list scrolls.
+- The window manager's close button closes the app directly: Rune cannot intercept a native close request, so confirm pending changes with the footer buttons instead.
 - The **Defaults** button opens a confirmation popup first; **Yes** restores the system-defined defaults. After Apply or Defaults succeeds, that button briefly says **Saved** or **Restored** until the next interaction after one second. Status text sits at the right of the header; full errors appear in a dialog.
 
 Application discovery, configuration I/O, theme detection, and icon loading happen asynchronously. The interface appears before discovery completes; icons are read and decoded in background batches after defaults arrive. Icon lookups (including missing icons) are cached. The MIME list is virtualized: only the rows near the viewport are built. The window's minimum width is 640 logical pixels and it has no maximum size.
