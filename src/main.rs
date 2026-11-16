@@ -804,7 +804,7 @@ fn overwrite_pressed(s: &mut State) {
     }
 }
 
-fn view(s: &State, cx: &mut Cx<State>) -> El {
+fn view(s: &State, _cx: &mut Cx<State>) -> El {
     let t = theme_of(s);
     let k = kit_of(s);
     let mut layer = Vec::new();
@@ -813,7 +813,7 @@ fn view(s: &State, cx: &mut Cx<State>) -> El {
         .w_full()
         .h_full()
         .fill(t.bg)
-        .child(header(s, &k, cx))
+        .child(header(s, &k))
         .child(filters(s, &k))
         .child(list_area(s))
         .child(Divider::horizontal().build(&k))
@@ -822,8 +822,7 @@ fn view(s: &State, cx: &mut Cx<State>) -> El {
     root(content, layer).on_press(|s: &mut State| interact(s))
 }
 
-fn logo(s: &State, cx: &mut Cx<State>) -> El {
-    let _ = cx;
+fn logo(s: &State) -> El {
     let Some(cache) = &s.icon_cache else {
         return el().size(30.0, 30.0);
     };
@@ -837,12 +836,12 @@ fn logo(s: &State, cx: &mut Cx<State>) -> El {
         .pixels_fit(image.pixels(), SurfaceFit::Fit)
 }
 
-fn header(s: &State, k: &Kit, cx: &mut Cx<State>) -> El {
+fn header(s: &State, k: &Kit) -> El {
     let t = theme_of(s);
     let title = row()
         .gap(8.0)
         .center_y()
-        .child(logo(s, cx))
+        .child(logo(s))
         .child(
             text("Default Applications")
                 .font(TextStyle::new(17.0, 600.0))
