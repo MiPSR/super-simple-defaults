@@ -403,6 +403,10 @@ fn apply_event(s: &mut State, event: UiEvent, tx: &mut Tx) -> bool {
         UiEvent::Reset { attempt, result, fresh } if attempt == s.attempt => apply_reset(s, result, fresh),
         UiEvent::Reset { .. } => false,
         UiEvent::Appearance(appearance) => {
+            if s.demo {
+                // A snapshot scene owns its appearance too.
+                return false;
+            }
             s.dark = appearance.dark;
             if s.icon_theme != appearance.icon_theme {
                 s.icon_theme = appearance.icon_theme;
@@ -420,6 +424,9 @@ fn apply_event(s: &mut State, event: UiEvent, tx: &mut Tx) -> bool {
             s.dark != appearance.dark
         }
         UiEvent::Theme(dark) => {
+            if s.demo {
+                return false;
+            }
             if s.dark != dark {
                 s.dark = dark;
                 return true;
@@ -875,15 +882,20 @@ fn filters(s: &State, k: &Kit) -> El {
         .pb(8.0)
         .gap(4.0)
         .child(
-            TextInput::new(&s.search)
-                .placeholder("Search MIME types or names…")
-                .on_edit(|s: &mut State| &mut s.search)
-                .on_change(|s: &mut State, tx: &mut Tx| {
-                    interact(s);
-                    s.filter();
-                    tx.scroll_to_instant(LIST_KEY, 0.0, 0.0);
-                })
-                .build(k),
+            el()
+                .key("search")
+                .w_full()
+                .child(
+                    TextInput::new(&s.search)
+                        .placeholder("Search MIME types or names…")
+                        .on_edit(|s: &mut State| &mut s.search)
+                        .on_change(|s: &mut State, tx: &mut Tx| {
+                            interact(s);
+                            s.filter();
+                            tx.scroll_to_instant(LIST_KEY, 0.0, 0.0);
+                        })
+                        .build(k),
+                ),
         )
         .child(text(summary).font(k.ty.small).color(k.c.text_muted))
 }
@@ -1392,11 +1404,16 @@ fn picker_dialog(s: &State, k: &Kit, entry: usize, slot: Option<usize>, layer: &
                 .grow(1.0)
                 .min_h(0.0)
                 .child(
-                    TextInput::new(&s.picker_search)
-                        .placeholder("Search applications…")
-                        .on_edit(|s: &mut State| &mut s.picker_search)
-                        .on_change(|s: &mut State, _: &mut Tx| interact(s))
-                        .build(k),
+                    el()
+                        .key("picker-search")
+                        .w_full()
+                        .child(
+                            TextInput::new(&s.picker_search)
+                                .placeholder("Search applications…")
+                                .on_edit(|s: &mut State| &mut s.picker_search)
+                                .on_change(|s: &mut State, _: &mut Tx| interact(s))
+                                .build(k),
+                        ),
                 )
                 .child(
                     el()
@@ -1482,7 +1499,13 @@ fn main() {
         setup: Some(setup),
         poll: Some(poll),
         on_key: Some(on_key),
-        scenes: &[("fixture", |s| install_fixture(s))],
+        scenes: &[
+            ("fixture", |s| install_fixture(s)),
+            ("fixture-light", |s| {
+                install_fixture(s);
+                s.dark = false;
+            }),
+        ],
         ..AppSpec::new("Super Simple Defaults", (1120.0, 760.0), State::default, view)
     });
 }

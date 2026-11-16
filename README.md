@@ -20,7 +20,7 @@ nix run --refresh github:MiPSR/super-simple-defaults
 
 ![Preview](preview.jpeg)
 
-The preview above shows the original interface; the current interface uses teal accents and ordered fallback controls.
+The preview above shows the original iced interface. The current interface is built with [Rune](https://github.com/anomalyco/rune) and uses the same teal accents and ordered fallback controls.
 
 ## Editing defaults
 
@@ -28,14 +28,15 @@ The preview above shows the original interface; the current interface uses teal 
 - **+** adds another application until there are no unused installed applications left. An empty entry has no application dropdown, only **+**.
 - Applications are an **ordered fallback list**, not applications launched simultaneously. Use **↑ / ↓** to reorder and **−** to remove one. Unavailable applications in an existing list remain visible so they can be replaced or removed.
 - The application picker puts associated applications first. Choosing another application also creates the required user association when saved.
-- **Teal highlighting and a dot** identify pending changes. **Undo** restores a row's loaded state. Reverting all changes disables Save again.
+- **Teal highlighting and a dot** identify pending changes. **Undo** restores a row's loaded state. Reverting all changes disables Cancel and Apply again.
 - **System** removes your explicit default for that MIME type when saved. The desktop may still choose an inherited default or an automatically preferred associated application: removing a default does not forbid opening that file type.
-- **Save** writes only changed MIME entries. Unrelated defaults, association order, other sections, and comments are preserved. Inherited defaults are not copied wholesale into your user configuration.
-- Defaults changed externally for an edited MIME type produce a conflict dialog. You can cancel and reload, or explicitly overwrite only your edited entries. External changes to unrelated entries are retained.
-- **Reload** and closing the window ask before discarding pending changes. **Save first** saves before continuing.
-- Action buttons briefly say **Saved**, **Reloaded**, or **Done** after success. Feedback clears after four seconds or the next click, scroll, or keyboard interaction. Status text is left of the fixed-width action buttons; full errors appear in a wrapping dialog.
+- **Apply** writes only changed MIME entries. Unrelated defaults, association order, other sections, and comments are preserved. Inherited defaults are not copied wholesale into your user configuration.
+- Defaults changed externally for an edited MIME type produce a conflict dialog. You can cancel, or explicitly overwrite only your edited entries. External changes to unrelated entries are retained.
+- Configuration files edited outside the app are detected automatically and reloaded silently; pending edits are kept.
+- **OK** saves pending changes and closes; **Cancel** discards them and closes and is disabled while there is nothing to discard; **Apply** saves without closing. The footer stays visible under a thin rule while the list scrolls.
+- The **Defaults** button opens a confirmation popup first; **Yes** restores the system-defined defaults. After Apply or Defaults succeeds, that button briefly says **Saved** or **Restored** until the next interaction after one second. Status text sits at the right of the header; full errors appear in a dialog.
 
-Application discovery, configuration I/O, theme detection, and icon loading happen asynchronously. The interface appears before discovery completes; icons are read and decoded in background batches after defaults arrive. Icon lookups (including missing icons) are cached. The MIME list only builds visible rows plus a small overscan region. The window has a minimum size of 840 × 520 logical pixels.
+Application discovery, configuration I/O, theme detection, and icon loading happen asynchronously. The interface appears before discovery completes; icons are read and decoded in background batches after defaults arrive. Icon lookups (including missing icons) are cached. The MIME list is virtualized: only the rows near the viewport are built. The window's minimum width is 640 logical pixels and it has no maximum size.
 
 ## Reset scope and file safety
 
@@ -59,11 +60,10 @@ No shell command is needed for the primary theme lookup: it reads the desktop po
 | --- | --- |
 | Color scheme | Direct settings portal → `dbus-send` → `gsettings` → `GTK_THEME` → dark theme |
 | Icon theme | Direct settings portal → `gsettings` → `hicolor` fallback theme |
-| Reset confirmation | `kdialog` → `zenity` → in-app confirmation |
 
-These commands are **host-provided optional tools**, not bundled by the Nix wrapper. They are alternate backends within each function, not interchangeable across all functions. Missing all of them does not prevent editing defaults: theme detection uses its fallback and reset has an in-app confirmation. A user's No/Cancel in a native reset dialog is final and does not open another dialog.
+These commands are **host-provided optional tools**, not bundled by the Nix wrapper. They are alternate backends within each function, not interchangeable across all functions. Missing all of them does not prevent editing defaults: theme detection uses its fallback. Color-scheme changes are picked up live while the app runs.
 
-Theme command fallbacks have timeouts and do not block the UI. Native confirmation processes are awaited asynchronously. Icon lookup respects the selected theme, inheritance and requested size instead of recursively searching every icon directory per application. `NoDisplay` applications remain available because they can legitimately handle files.
+Theme command fallbacks have timeouts and do not block the UI. Reset always uses the in-app confirmation popup. Icon lookup respects the selected theme, inheritance and requested size instead of recursively searching every icon directory per application. `NoDisplay` applications remain available because they can legitimately handle files.
 
 The command name `ssd` was not present on the development host when selected; this is not a guarantee that no other project uses the name. Invoke the Nix package directly if another installed command conflicts.
 

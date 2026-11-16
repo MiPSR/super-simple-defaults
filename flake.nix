@@ -1,5 +1,5 @@
 {
-  description = "Native default-applications selector (Rust/iced, Wayland)";
+  description = "Native default-applications selector (Rust/Rune, Wayland)";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
 
