@@ -1246,8 +1246,7 @@ fn dialog_layer(s: &State, k: &Kit, layer: &mut Vec<El>) {
                     )
                     .wrap()
                     .font(k.ty.small)
-                    .color(k.c.text_muted)
-                    .into(),
+                    .color(k.c.text_muted),
                     row()
                         .justify_end()
                         .gap(8.0)
@@ -1270,7 +1269,7 @@ fn dialog_layer(s: &State, k: &Kit, layer: &mut Vec<El>) {
                                 .build(k)
                                 .key("defaults-yes"),
                         )
-                        .into(),
+
                 ]))
                 .build(k, layer);
         }
@@ -1289,15 +1288,13 @@ fn dialog_layer(s: &State, k: &Kit, layer: &mut Vec<El>) {
                     )
                     .wrap()
                     .font(k.ty.small)
-                    .color(k.c.text_muted)
-                    .into(),
+                    .color(k.c.text_muted),
                     el()
                         .key("conflict-keys")
                         .h(160.0)
                         .w_full()
                         .scroll(ScrollSpec { stick_bottom: false })
-                        .child(text(keys.join("\n")).wrap().font(k.ty.mono))
-                        .into(),
+                        .child(text(keys.join("\n")).wrap().font(k.ty.mono)),
                     row()
                         .justify_end()
                         .gap(8.0)
@@ -1314,7 +1311,7 @@ fn dialog_layer(s: &State, k: &Kit, layer: &mut Vec<El>) {
                                 .on_press(|s: &mut State| overwrite_pressed(s))
                                 .build(k),
                         )
-                        .into(),
+
                 ]))
                 .build(k, layer);
         }
@@ -1330,8 +1327,7 @@ fn dialog_layer(s: &State, k: &Kit, layer: &mut Vec<El>) {
                         .h(240.0)
                         .w_full()
                         .scroll(ScrollSpec { stick_bottom: false })
-                        .child(text(error).wrap())
-                        .into(),
+                        .child(text(error).wrap()),
                     row().justify_end().child(
                         Button::new("OK")
                             .on_press(|s: &mut State| {
@@ -1530,12 +1526,12 @@ fn install_fixture(s: &mut State) {
     for (name, title, icon) in [
         ("a", "Archive Manager", "icon-a.svg"),
         ("b", "Text Editor", "icon-b.svg"),
+        ("c", "Image Viewer", "icon-c.svg"),
+        ("d", "Media Player", "icon-d.svg"),
     ] {
         std::fs::write(
-            applications.join(format!("{icon}")),
-            format!(
-                "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\"><rect x=\"3\" y=\"3\" width=\"18\" height=\"18\" rx=\"4\" fill=\"#008080\"/></svg>"
-            ),
+            applications.join(icon),
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\"><rect x=\"3\" y=\"3\" width=\"18\" height=\"18\" rx=\"4\" fill=\"#008080\"/></svg>",
         )
         .unwrap();
         std::fs::write(
@@ -1549,7 +1545,7 @@ fn install_fixture(s: &mut State) {
     }
     std::fs::write(
         paths.target(),
-        "[Default Applications]\ntext/plain=a.desktop;\nimage/png=b.desktop;\n",
+        "[Default Applications]\ntext/plain=a.desktop;\nimage/png=c.desktop;b.desktop;a.desktop;\n",
     )
     .unwrap();
     s.demo = true;
@@ -1718,6 +1714,55 @@ mod tests {
         )
         .unwrap();
         assert!(external_changes(&state));
+    }
+
+    #[test]
+    fn poll_detects_external_edits_and_reloads_keeping_pending_intents() {
+        let (_tmp, state) = fixture();
+        let mut rt = runtime_of(state);
+        // A pending edit the reload must keep.
+        rt.update(|s: &mut State, _| remove_choice(s, "text/plain".into(), 0));
+        let paths = rt.state.data.as_ref().unwrap().snapshot.paths.clone();
+        std::fs::write(
+            paths.target(),
+            "[Default Applications]\ntext/plain=b.desktop;\n",
+        )
+        .unwrap();
+        // The check is due at 90 seconds.
+        rt.update(|s: &mut State, tx| {
+            s.watch_due = Some(90.0);
+            assert!(poll(s, 100.0, tx));
+        });
+        assert_eq!(rt.state.attempt, 1, "the reload started");
+        for _ in 0..50 {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            rt.update(|s: &mut State, tx| {
+                poll(s, 101.0, tx);
+            });
+            let fresh = rt
+                .state
+                .data
+                .as_ref()
+                .unwrap()
+                .entries[0]
+                .original
+                .contains(&"b.desktop".to_string());
+            if fresh {
+                break;
+            }
+        }
+        assert!(
+            rt.state.data.as_ref().unwrap().entries[0]
+                .original
+                .contains(&"b.desktop".to_string()),
+            "the external edit landed"
+        );
+        assert!(
+            rt.state.data.as_ref().unwrap().entries[0].choices.is_empty(),
+            "the pending removal survived the reload"
+        );
+        assert!(rt.state.dirty());
+        assert!(rt.state.status.is_empty(), "the reload was silent");
     }
 
     #[test]

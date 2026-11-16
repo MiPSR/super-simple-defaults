@@ -24,7 +24,11 @@
           src = pkgs.lib.cleanSource ./.;
           filter = path: type: baseNameOf path != "target";
         };
-        cargoLock.lockFile = ./Cargo.lock;
+        # Vendoring is fetched by fetchCargoVendor (buildRustPackage's default
+        # with cargoHash); it handles Rune's git workspace crates plus the same
+        # crate version from crates.io. Update the hash after a Rune bump; the
+        # mismatch error prints the expected one.
+        cargoHash = "sha256-phvv0ItGkKHXL0KmbO03AbkwNXQKjZjETOTyDwfPObg=";
         nativeBuildInputs = [ pkgs.pkg-config pkgs.makeWrapper pkgs.desktop-file-utils ];
         buildInputs = libs;
         doCheck = true;
