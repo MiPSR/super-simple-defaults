@@ -1370,7 +1370,7 @@ fn dialog_layer(s: &State, k: &Kit, layer: &mut Vec<El>) {
                     .wrap()
                     .font(k.ty.small)
                     .color(k.c.text_muted),
-                    el()
+                    col()
                         .key("conflict-keys")
                         .h(160.0)
                         .w_full()
@@ -1403,7 +1403,7 @@ fn dialog_layer(s: &State, k: &Kit, layer: &mut Vec<El>) {
                 .open(true)
                 .on_close(|s: &mut State| s.dialog = None)
                 .child(panel(vec![
-                    el()
+                    col()
                         .key("error-text")
                         .h(240.0)
                         .w_full()
@@ -1494,12 +1494,12 @@ fn picker_dialog(s: &State, k: &Kit, entry: usize, slot: Option<usize>, layer: &
                         ),
                 )
                 .child(
-                    el()
+                    col()
                         .key("app-list")
                         .grow(1.0)
                         .min_h(0.0)
                         .scroll(ScrollSpec { stick_bottom: false })
-                        .child(col().gap(2.0).children(items))
+                        .child(col().w_full().gap(2.0).children(items))
                         .scroll_bar(k),
                 )
                 .child(
