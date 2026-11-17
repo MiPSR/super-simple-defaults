@@ -1,6 +1,6 @@
 # Super Simple Defaults
 
-A small native desktop application that helps you set default applications.
+A small native desktop application that helps you set default applications.\
 Written in Rust with [Rune](https://github.com/anomalyco/rune), packaged for NixOS.
 
 ![Super Simple Defaults](screenshot.jpeg)
@@ -21,15 +21,13 @@ inputs.super-simple-defaults.packages.x86_64-linux.default
 
 ## Run
 
+NixOS only, other distributions are not supported for now.
+
 ```sh
 nix run github:MiPSR/super-simple-defaults
 ```
 
-If you ran it before and want the newest version:
-
-```sh
-nix run --refresh github:MiPSR/super-simple-defaults
-```
+If you already ran the app before, add `--refresh` to the command to get the newest version.
 
 ## Development
 
@@ -44,4 +42,4 @@ This app is mostly written by the AI tool [OpenCode](https://github.com/anomalyc
 
 ## Contributing
 
-Contributions must say which agent and tool were used.
+Any contribution is nice. If AI was used, say which tools and agents were used.
