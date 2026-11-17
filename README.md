@@ -1,6 +1,7 @@
 # Super Simple Defaults
 
-A small native desktop app that sets, for you, which application opens each file type.
+A small native desktop application that helps you set default applications.
+Written in Rust with [Rune](https://github.com/anomalyco/rune), packaged for NixOS.
 
 ![Super Simple Defaults](screenshot.jpeg)
 
