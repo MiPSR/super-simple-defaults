@@ -894,11 +894,7 @@ fn header(s: &State, k: &Kit) -> El {
 }
 
 fn filters(s: &State, k: &Kit) -> El {
-    let summary = format!(
-        "{} types · {} changed · + adds an ordered fallback · the system-default chip restores the system default",
-        s.filtered.len(),
-        s.changed_count()
-    );
+    let summary = format!("{} types and {} changed", s.filtered.len(), s.changed_count());
     col()
         .key("filters")
         .w_full()
