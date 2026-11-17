@@ -337,4 +337,28 @@ mod tests {
         assert!(resolver.paths.contains_key("missing"));
         assert!(!safe_relative("../outside"));
     }
+
+    #[test]
+    fn bare_names_probe_hicolor_even_without_an_index_theme() {
+        let tmp = tempfile::tempdir().unwrap();
+        let paths = crate::config::Paths {
+            config_home: tmp.path().join("config"),
+            data_home: tmp.path().join("data"),
+            config_dirs: vec![],
+            data_dirs: vec![],
+            desktops: vec![],
+            locales: vec![],
+        };
+        std::fs::create_dir_all(paths.data_home.join("icons/hicolor/24x24/apps")).unwrap();
+        std::fs::write(
+            paths
+                .data_home
+                .join("icons/hicolor/24x24/apps/application-x-executable.svg"),
+            "<svg/>",
+        )
+        .unwrap();
+        let mut resolver = Resolver::new(&paths, None, 2);
+        let resolved = resolver.resolve(vec!["application-x-executable".into()]);
+        assert!(resolved["application-x-executable"].is_some());
+    }
 }

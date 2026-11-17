@@ -42,6 +42,8 @@ const ICON_PT: f32 = 20.0;
 /// Icons rasterize at 2×, so 1× and 2× displays draw them sharp and other
 /// scales fall back to mips.
 const ICON_SCALE: f32 = 2.0;
+/// The standard fallback for applications without an icon of their own.
+const FALLBACK_ICON: &str = "application-x-executable";
 const FOOTER_HEIGHT: f32 = 56.0;
 /// Seconds between checks for externally edited configuration files.
 const WATCH_INTERVAL: f64 = 2.0;
@@ -261,24 +263,38 @@ impl State {
 
     /// Asks the icon worker for every application icon's file; Rune's
     /// `ImageCache` decodes and rasterizes on its own threads afterwards.
+    /// Names that resolve to nothing fall back to the generic executable
+    /// icon, which is requested alongside them for direct lookup.
     fn request_icons(&mut self) {
         let Some(data) = &self.data else {
             return;
         };
-        let names: Vec<String> = data
+        let mut names: HashSet<String> = data
             .apps
             .iter()
             .map(|a| a.icon_name.clone())
             .filter(|n| !n.is_empty())
-            .collect::<HashSet<_>>()
-            .into_iter()
             .collect();
+        names.insert(FALLBACK_ICON.to_string());
         if names.is_empty() {
             return;
         }
         let resolver = self.icon_resolver.clone();
-        self.icon_batch
-            .request(names, move |names| resolver.lock().unwrap().resolve(names));
+        self.icon_batch.request(names.into_iter().collect(), move |names| {
+            let mut guard = resolver.lock().unwrap();
+            let mut resolved = guard.resolve(names);
+            // Applications without an icon of their own draw the generic
+            // executable icon.
+            for (name, path) in resolved.iter_mut() {
+                if path.is_none() && name != FALLBACK_ICON {
+                    *path = guard
+                        .resolve(vec![FALLBACK_ICON.to_string()])
+                        .remove(FALLBACK_ICON)
+                        .unwrap_or(None);
+                }
+            }
+            resolved
+        });
     }
 
     fn apply_icon_paths(&mut self, paths: IconPaths) {
@@ -853,7 +869,7 @@ fn header(s: &State, k: &Kit) -> El {
         .center_y()
         .child(logo(s))
         .child(
-            text("Default Applications")
+            text("Super Simple Defaults")
                 .font(TextStyle::new(17.0, 600.0))
                 .color(t.text),
         );
@@ -977,7 +993,10 @@ fn list_area(s: &State) -> El {
 
 fn icon_el(s: &State, app: usize) -> El {
     let name = s.data.as_ref().map(|d| d.apps[app].icon_name.clone());
-    let image = name.as_ref().and_then(|name| s.icons.get(name));
+    let image = name
+        .as_ref()
+        .and_then(|name| s.icons.get(name))
+        .or_else(|| s.icons.get(FALLBACK_ICON));
     match image {
         Some(image) => el()
             .size(ICON_PT, ICON_PT)
@@ -1597,25 +1616,40 @@ fn install_fixture(s: &mut State) {
     let applications = paths.data_home.join("applications");
     std::fs::create_dir_all(applications.clone()).unwrap();
     for (name, title, icon) in [
-        ("a", "Archive Manager", "icon-a.svg"),
-        ("b", "Text Editor", "icon-b.svg"),
-        ("c", "Image Viewer", "icon-c.svg"),
-        ("d", "Media Player", "icon-d.svg"),
+        ("a", "Archive Manager", Some("icon-a.svg")),
+        ("b", "Text Editor", Some("icon-b.svg")),
+        ("c", "Image Viewer", Some("icon-c.svg")),
+        // An application without an icon of its own: it draws the generic
+        // executable icon.
+        ("d", "Media Player", None),
     ] {
-        std::fs::write(
-            applications.join(icon),
-            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\"><rect x=\"3\" y=\"3\" width=\"18\" height=\"18\" rx=\"4\" fill=\"#008080\"/></svg>",
-        )
-        .unwrap();
+        if let Some(icon) = icon {
+            std::fs::write(
+                applications.join(icon),
+                "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\"><rect x=\"3\" y=\"3\" width=\"18\" height=\"18\" rx=\"4\" fill=\"#008080\"/></svg>",
+            )
+            .unwrap();
+        }
         std::fs::write(
             applications.join(format!("{name}.desktop")),
             format!(
                 "[Desktop Entry]\nType=Application\nName={title}\nExec=example\nMimeType=text/plain;image/png;\nIcon={}\n",
-                applications.join(icon).display()
+                icon.map(|icon| applications.join(icon).display().to_string())
+                    .unwrap_or_else(|| "missing-icon".into())
             ),
         )
         .unwrap();
     }
+    // The theme's generic executable icon, the fallback for applications
+    // without an icon of their own.
+    std::fs::create_dir_all(paths.data_home.join("icons/hicolor/24x24/apps")).unwrap();
+    std::fs::write(
+        paths
+            .data_home
+            .join("icons/hicolor/24x24/apps/application-x-executable.svg"),
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\"><circle cx=\"12\" cy=\"12\" r=\"7\" fill=\"none\" stroke=\"#8a8f98\" stroke-width=\"2\"/></svg>",
+    )
+    .unwrap();
     std::fs::write(
         paths.target(),
         "[Default Applications]\ntext/plain=a.desktop;\nimage/png=c.desktop;b.desktop;a.desktop;\n",
@@ -1655,6 +1689,15 @@ mod tests {
                 .data_home
                 .join("icons/hicolor/24x24/apps/example.svg"),
             "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\"/>",
+        )
+        .unwrap();
+        // The theme's generic executable icon, the fallback for applications
+        // without an icon of their own.
+        std::fs::write(
+            paths
+                .data_home
+                .join("icons/hicolor/24x24/apps/application-x-executable.svg"),
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"24\" height=\"24\" viewBox=\"0 0 24 24\"><circle cx=\"12\" cy=\"12\" r=\"7\" fill=\"none\" stroke=\"#8a8f98\" stroke-width=\"2\"/></svg>",
         )
         .unwrap();
         for name in ["a", "b"] {
