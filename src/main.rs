@@ -302,15 +302,18 @@ impl State {
             return;
         };
         for (name, path) in paths {
-            match path {
-                Some(path) => {
-                    self.icons
-                        .insert(name, cache.file(path, ICON_PT, ICON_SCALE));
-                }
-                None => {
-                    self.icons.remove(&name);
-                }
-            }
+            let image = match path {
+                Some(path) => cache.file(path, ICON_PT, ICON_SCALE),
+                // The theme has nothing for this application (the worker
+                // already substituted the theme's generic executable icon
+                // when it has one): draw the bundled generic icon.
+                None => cache.svg(
+                    include_bytes!("../assets/application-x-executable.svg").as_slice(),
+                    ICON_PT,
+                    ICON_SCALE,
+                ),
+            };
+            self.icons.insert(name, image);
         }
         self.icon_rev += 1;
     }
@@ -898,17 +901,18 @@ fn filters(s: &State, k: &Kit) -> El {
     col()
         .key("filters")
         .w_full()
-        .pl(16.0)
-        .pr(16.0)
+        .pl(20.0)
+        .pr(20.0)
         .pb(8.0)
         .gap(4.0)
         .child(
-            el()
+            col()
                 .key("search")
                 .w_full()
                 .child(
                     TextInput::new(&s.search)
                         .placeholder("Search MIME types or names…")
+                        .width(None)
                         .on_edit(|s: &mut State| &mut s.search)
                         .on_change(|s: &mut State, tx: &mut Tx| {
                             interact(s);
@@ -1477,12 +1481,13 @@ fn picker_dialog(s: &State, k: &Kit, entry: usize, slot: Option<usize>, layer: &
                 .grow(1.0)
                 .min_h(0.0)
                 .child(
-                    el()
+                    col()
                         .key("picker-search")
                         .w_full()
                         .child(
                             TextInput::new(&s.picker_search)
                                 .placeholder("Search applications…")
+                                .width(None)
                                 .on_edit(|s: &mut State| &mut s.picker_search)
                                 .on_change(|s: &mut State, _: &mut Tx| interact(s))
                                 .build(k),
